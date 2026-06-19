@@ -1,0 +1,5 @@
+[database]
+host = "127.0.0.1"
+port = 5432
+name = "countries_pipeline_dev"
+user = "countries_etl_user"
