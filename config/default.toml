@@ -1,5 +1,15 @@
+[rest_countries]
+url = "https://api.restcountries.com/countries/v5"
+response_fields = "names.common,official,capitals.name,region,subregion,area,calling_codes,currencies,government_type,population,timezones"
+limit = 100
+filename = "countries_raw_filtered.json"
+
+[logging]
+level = "INFO"
+
 [database]
-host = "127.0.0.1"
 port = 5432
-name = "countries_pipeline_dev"
-user = "countries_etl_user"
+
+[database.raw]
+schema = "raw_countries"
+table = "countries_raw"

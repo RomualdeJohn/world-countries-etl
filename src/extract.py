@@ -1,10 +1,13 @@
+from config_loader import load_config, DATA_DIR
+from dotenv import load_dotenv
+from logger import get_logger
+
 import requests
 import os
 import json
 import time
-from dotenv import load_dotenv
 
-load_dotenv()
+logger = get_logger(__name__)
 
 def fetch_page_with_retry(
     url: str,
@@ -17,12 +20,24 @@ def fetch_page_with_retry(
     for attempt in range(max_retry):
         try:
             response = requests.get(url, headers=headers, params=params, timeout=timeout)
-            print(f"Attempt {attempt + 1}/{max_retry} | offset={params['offset']} | status={response.status_code}")
+            logger.debug(
+                "attempt=%s/%s offset=%s status=%s",
+                attempt + 1,
+                max_retry,
+                params["offset"],
+                response.status_code,
+            )
             if response.status_code in (429, 502, 503):
                 if attempt == max_retry - 1:
                     response.raise_for_status()
                 wait = sleep * (2 ** attempt)
-                print(f"Attempt {attempt + 1}/{max_retry} failed. Waiting {wait} seconds before retrying...")
+                logger.warning(
+                    "attempt=%s/%s retrying in %ss after status %s",
+                    attempt + 1,
+                    max_retry,
+                    wait,
+                    response.status_code,
+                )
                 time.sleep(wait)
                 continue
             response.raise_for_status()
@@ -33,18 +48,33 @@ def fetch_page_with_retry(
             if attempt == max_retry - 1:
                 raise e
             wait = sleep * (2 ** attempt)
-            print(f"Attempt {attempt + 1}/{max_retry} failed. Waiting {wait} seconds before retrying. Connection error: {e}")
+            logger.warning(
+                "attempt=%s/%s retrying in %ss after connection error: %s",
+                attempt + 1,
+                max_retry,
+                wait,
+                e,
+            )
             time.sleep(wait)
     else:
         raise RuntimeError(f"Failed to fetch page after {max_retry} attempts.")
 
-def fetch_all_countries_data(limit: int = 100) -> list[dict]:
+def fetch_all_countries_data() -> list[dict]:
+    load_dotenv()
+    env = os.getenv("APP_ENV", "dev")
+    config = load_config(env)
+    OUTPUT_PATH = DATA_DIR / config["rest_countries"]["filename"]
+
     all_countries_data: list[dict] = []
     offset = 0
-    url = os.getenv("API_URL")
+
+    if not os.getenv("API_KEY"):
+        raise ValueError("API_KEY is missing")
+
+    url = config["rest_countries"]["url"]
     base_params = {
-        "limit": limit,
-        "response_fields": "names.common,official,capitals.name,region,subregion,area,calling_codes,currencies,government_type,population,timezones",
+        "limit": config["rest_countries"]["limit"],
+        "response_fields": config["rest_countries"]["response_fields"],
     }
     headers = {
         "Accept": "application/json",
@@ -64,7 +94,8 @@ def fetch_all_countries_data(limit: int = 100) -> list[dict]:
             break
         offset += meta["count"]
     
-    with open("data/countries_raw_filtered.json", "w") as file:
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(OUTPUT_PATH, "w", encoding="utf-8") as file:
         json.dump(all_countries_data, file, indent=4)
 
     return all_countries_data
@@ -72,4 +103,4 @@ def fetch_all_countries_data(limit: int = 100) -> list[dict]:
 
 if __name__ == "__main__":
     countries = fetch_all_countries_data()
-    print(f"[+] Fetched {len(countries)} countries")
+    logger.info("Fetched %s countries", len(countries))
