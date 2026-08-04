@@ -13,3 +13,7 @@ port = 5432
 [database.raw]
 schema = "raw_countries"
 table = "countries_raw"
+
+[database.transformed]
+schema = "analytics"
+table = "countries"
