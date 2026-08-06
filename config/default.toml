@@ -17,3 +17,7 @@ table = "countries_raw"
 [database.transformed]
 schema = "analytics"
 table = "countries"
+
+[database.currencies]
+schema = "analytics"
+table = "country_currencies"

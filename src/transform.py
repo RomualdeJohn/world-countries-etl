@@ -24,51 +24,85 @@ def get_db_connection(config: dict):
     )
 
 
+TRUNCATE_COUNTRIES_SQL = "TRUNCATE TABLE {target} CASCADE"
 
-TRANSFORM_SQL = """
-        TRUNCATE TABLE {target};
-        INSERT INTO {target} (
-            country_name, capital, region, subregion,
-            area_km, population, government_type,
-            timezones, calling_codes, currencies_raw, loaded_at
-        )
-        SELECT
-            payload->'names'->>'common',
-            payload->'capitals'->0->>'name',
-            payload->>'region',
-            payload->>'subregion',
-            (payload->'area'->>'kilometers')::numeric,
-            (payload->>'population')::bigint,
-            payload->>'government_type',
-            ARRAY(SELECT jsonb_array_elements_text(payload->'timezones')),
-            ARRAY(SELECT jsonb_array_elements_text(payload->'calling_codes')),
-            payload->'currencies',
-            loaded_at
-        FROM {source};
-    """
+INSERT_COUNTRIES_SQL = """
+    INSERT INTO {target} (
+        country_name, capital, region, subregion,
+        area_km, population, government_type,
+        timezones, calling_codes, currencies_raw, loaded_at
+    )
+    SELECT
+        payload->'names'->>'common',
+        payload->'capitals'->0->>'name',
+        payload->>'region',
+        payload->>'subregion',
+        (payload->'area'->>'kilometers')::numeric,
+        (payload->>'population')::bigint,
+        payload->>'government_type',
+        ARRAY(SELECT jsonb_array_elements_text(payload->'timezones')),
+        ARRAY(SELECT jsonb_array_elements_text(payload->'calling_codes')),
+        payload->'currencies',
+        loaded_at
+    FROM {source};
+"""
+
+TRUNCATE_CURRENCIES_SQL = "TRUNCATE TABLE {currencies}"
+
+INSERT_CURRENCIES_SQL = """
+    INSERT INTO {currencies} (
+        country_id, country_name, currency_code, currency_name, currency_symbol
+    )
+    SELECT
+        c.id,
+        c.country_name,
+        curr->>'code',
+        curr->>'name',
+        curr->>'symbol'
+    FROM {countries} c
+    CROSS JOIN LATERAL jsonb_array_elements(
+        COALESCE(c.currencies_raw, '[]'::jsonb)
+    ) AS curr;
+"""
 
 
-def transform_countries() -> int:
+def transform_countries() -> tuple[int, int]:
     load_dotenv()
     env = os.getenv("APP_ENV", "dev")
     config = load_config(env)
 
     raw = config["database"]["raw"]
     transformed = config["database"]["transformed"]
+    currencies = config["database"]["currencies"]
+
     source = f"{raw['schema']}.{raw['table']}"
     target = f"{transformed['schema']}.{transformed['table']}"
+    currencies_table = f"{currencies['schema']}.{currencies['table']}"
 
     conn = get_db_connection(config)
     try:
         with conn.cursor() as cur:
             logger.info("Transforming %s -> %s", source, target)
-            cur.execute(TRANSFORM_SQL.format(source=source, target=target))
+            cur.execute(TRUNCATE_COUNTRIES_SQL.format(target=target))
+            cur.execute(INSERT_COUNTRIES_SQL.format(source=source, target=target))
             cur.execute(f"SELECT COUNT(*) FROM {target}")
-            row_count = cur.fetchone()[0]
+            country_count = cur.fetchone()[0]
+            logger.info("Transformed %s rows into %s", country_count, target)
+
+            logger.info("Flattening currencies into %s", currencies_table)
+            cur.execute(TRUNCATE_CURRENCIES_SQL.format(currencies=currencies_table))
+            cur.execute(
+                INSERT_CURRENCIES_SQL.format(
+                    currencies=currencies_table,
+                    countries=target,
+                )
+            )
+            cur.execute(f"SELECT COUNT(*) FROM {currencies_table}")
+            currency_count = cur.fetchone()[0]
+            logger.info("Loaded %s currency rows into %s", currency_count, currencies_table)
 
         conn.commit()
-        logger.info("Transformed %s rows into %s", row_count, target)
-        return row_count
+        return country_count, currency_count
     except Exception:
         conn.rollback()
         logger.exception("Transform failed")
@@ -78,5 +112,9 @@ def transform_countries() -> int:
 
 
 if __name__ == "__main__":
-    row_count = transform_countries()
-    logger.info("Transform completed with %s rows", row_count)
+    country_count, currency_count = transform_countries()
+    logger.info(
+        "Transform completed with %s countries and %s currency rows",
+        country_count,
+        currency_count,
+    )
