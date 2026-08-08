@@ -10,6 +10,19 @@ logger = get_logger(__name__)
 
 
 def get_db_connection(config: dict):
+    """
+    Open a PostgreSQL connection using config values and DB_PASSWORD.
+
+    Shared by load/transform so database credentials stay in one place.
+
+    Input:
+        config (dict): merged app config containing database host/port/name/user.
+            Sample: {"database": {"host": "127.0.0.1", "port": 5432, "name": "countries_pipeline_dev", "user": "countries_etl_user_dev"}}
+
+    Result:
+        psycopg2.extensions.connection: open database connection.
+            Sample: <connection object at 0x...>
+    """
     db = config["database"]
     password = os.getenv("DB_PASSWORD")
     if not password:
@@ -67,6 +80,19 @@ INSERT_CURRENCIES_SQL = """
 
 
 def transform_countries() -> tuple[int, int]:
+    """
+    Flatten raw JSONB countries into analytics tables, including currencies.
+
+    Truncates and reloads analytics.countries, then unnests currencies_raw
+    into analytics.country_currencies.
+
+    Input:
+        None
+
+    Result:
+        tuple[int, int]: country row count and currency row count.
+            Sample: (254, 272)
+    """
     load_dotenv()
     env = os.getenv("APP_ENV", "dev")
     config = load_config(env)

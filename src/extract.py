@@ -9,6 +9,7 @@ import time
 
 logger = get_logger(__name__)
 
+
 def fetch_page_with_retry(
     url: str,
     headers: dict,
@@ -17,6 +18,29 @@ def fetch_page_with_retry(
     max_retry: int = 5,
     sleep: int = 2,
 ) -> dict:
+    """
+    GET one API page and retry with exponential backoff on transient failures.
+
+    Handles HTTP 429/502/503 and connection/timeout errors so pagination can continue safely.
+
+    Input:
+        url (str): REST Countries API endpoint.
+            Sample: "https://api.restcountries.com/countries/v5"
+        headers (dict): request headers including Authorization.
+            Sample: {"Accept": "application/json", "Authorization": "Bearer <token>"}
+        params (dict): query params for the page request.
+            Sample: {"limit": 100, "offset": 0, "response_fields": "names.common,population"}
+        timeout (int): request timeout in seconds.
+            Sample: 30
+        max_retry (int): maximum attempts before failing.
+            Sample: 5
+        sleep (int): base wait seconds used for exponential backoff.
+            Sample: 2
+
+    Result:
+        dict: parsed JSON body for the requested page.
+            Sample: {"data": {"objects": [...], "meta": {"more": False, "count": 54}}}
+    """
     for attempt in range(max_retry):
         try:
             response = requests.get(url, headers=headers, params=params, timeout=timeout)
@@ -59,7 +83,20 @@ def fetch_page_with_retry(
     else:
         raise RuntimeError(f"Failed to fetch page after {max_retry} attempts.")
 
+
 def fetch_all_countries_data() -> list[dict]:
+    """
+    Paginate the REST Countries API and return every country payload.
+
+    Also writes the filtered response to data/ for local inspection and debugging.
+
+    Input:
+        None
+
+    Result:
+        list[dict]: all country objects from the API.
+            Sample: [{"names": {"common": "Japan"}, "population": 125000000}]
+    """
     load_dotenv()
     env = os.getenv("APP_ENV", "dev")
     config = load_config(env)
@@ -78,9 +115,9 @@ def fetch_all_countries_data() -> list[dict]:
     }
     headers = {
         "Accept": "application/json",
-        "Authorization": f"Bearer {os.getenv("API_KEY")}",
+        "Authorization": f"Bearer {os.getenv('API_KEY')}",
     }
-    
+
     while True:
         params = {**base_params, "offset": offset}
         countries = fetch_page_with_retry(url, headers, params)
@@ -93,7 +130,7 @@ def fetch_all_countries_data() -> list[dict]:
         if not meta["more"]:
             break
         offset += meta["count"]
-    
+
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(OUTPUT_PATH, "w", encoding="utf-8") as file:
         json.dump(all_countries_data, file, indent=4)

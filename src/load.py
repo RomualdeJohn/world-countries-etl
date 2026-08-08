@@ -11,6 +11,19 @@ logger = get_logger(__name__)
 
 
 def get_db_connection(config: dict):
+    """
+    Open a PostgreSQL connection using config values and DB_PASSWORD.
+
+    Shared by load/transform so database credentials stay in one place.
+
+    Input:
+        config (dict): merged app config containing database host/port/name/user.
+            Sample: {"database": {"host": "127.0.0.1", "port": 5432, "name": "countries_pipeline_dev", "user": "countries_etl_user_dev"}}
+
+    Result:
+        psycopg2.extensions.connection: open database connection.
+            Sample: <connection object at 0x...>
+    """
     db = config["database"]
     password = os.getenv("DB_PASSWORD")
     if not password:
@@ -26,6 +39,19 @@ def get_db_connection(config: dict):
 
 
 def load_countries_data(countries: list[dict]) -> int:
+    """
+    Truncate the raw countries table and insert a full dump of API payloads.
+
+    Used after extract so analysts always see a fresh snapshot of country JSON.
+
+    Input:
+        countries (list[dict]): list of country payloads from the API.
+            Sample: [{"names": {"common": "Japan"}, "population": 125000000}]
+
+    Result:
+        int: number of rows inserted.
+            Sample: 254
+    """
     load_dotenv()
     env = os.getenv("APP_ENV", "dev")
     config = load_config(env)
