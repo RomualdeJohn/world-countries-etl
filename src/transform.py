@@ -1,6 +1,7 @@
 from config_loader import load_config
 from dotenv import load_dotenv
 from logger import get_logger
+from quality import run_country_quality_checks
 
 import psycopg2
 import os
@@ -84,7 +85,7 @@ def transform_countries() -> tuple[int, int]:
     Flatten raw JSONB countries into analytics tables, including currencies.
 
     Truncates and reloads analytics.countries, then unnests currencies_raw
-    into analytics.country_currencies.
+    into analytics.country_currencies. Runs data quality checks before commit.
 
     Input:
         None
@@ -114,6 +115,7 @@ def transform_countries() -> tuple[int, int]:
             cur.execute(f"SELECT COUNT(*) FROM {target}")
             country_count = cur.fetchone()[0]
             logger.info("Transformed %s rows into %s", country_count, target)
+            run_country_quality_checks(cur, target, country_count)
 
             logger.info("Flattening currencies into %s", currencies_table)
             cur.execute(TRUNCATE_CURRENCIES_SQL.format(currencies=currencies_table))
